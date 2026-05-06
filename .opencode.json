@@ -1,0 +1,20 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "// HARDENED": "Copilot-only config. Share disabled, no external model fetching.",
+  "model": "github-copilot/claude-sonnet-4.6",
+  "enabled_providers": ["github-copilot"],
+  "provider": {
+    "github-copilot": {
+      "name": "GitHub Copilot",
+      "env": ["GITHUB_TOKEN"],
+      "options": {
+        "timeout": 60000,
+        "sseTimeout": 10000
+      }
+    }
+  },
+  "share": "disabled",
+  "experimental": {
+    "openTelemetry": false
+  }
+}

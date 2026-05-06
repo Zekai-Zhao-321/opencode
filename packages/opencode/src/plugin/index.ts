@@ -11,14 +11,9 @@ import * as Log from "@opencode-ai/core/util/log"
 import { createOpencodeClient } from "@opencode-ai/sdk"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { ServerAuth } from "@/server/auth"
-import { CodexAuthPlugin } from "./codex"
 import { Session } from "@/session/session"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { CopilotAuthPlugin } from "./github-copilot/copilot"
-import { gitlabAuthPlugin as GitlabAuthPlugin } from "opencode-gitlab-auth"
-import { PoeAuthPlugin } from "opencode-poe-auth"
-import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cloudflare"
-import { AzureAuthPlugin } from "./azure"
 import { Effect, Layer, Context, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
@@ -57,13 +52,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Pl
 
 // Built-in plugins that are directly imported (not installed from npm)
 const INTERNAL_PLUGINS: PluginInstance[] = [
-  CodexAuthPlugin,
   CopilotAuthPlugin,
-  GitlabAuthPlugin,
-  PoeAuthPlugin,
-  CloudflareWorkersAuthPlugin,
-  CloudflareAIGatewayAuthPlugin,
-  AzureAuthPlugin,
 ]
 
 function isServerPlugin(value: unknown): value is PluginInstance {

@@ -1,141 +1,129 @@
-<p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset="packages/console/app/src/asset/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset="packages/console/app/src/asset/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src="packages/console/app/src/asset/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
-</p>
-<p align="center">The open source AI coding agent.</p>
-<p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/publish.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/publish.yml?style=flat-square&branch=dev" /></a>
-</p>
+# OpenCode ΓÇö Copilot-Only Fork
 
-<p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
-</p>
-
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+> A hardened fork of [opencode](https://github.com/anomalyco/opencode) locked to GitHub Copilot. Safe for corporate use, with an autonomous **Autopilot** agent mode for unattended coding.
 
 ---
 
-### Installation
+## Why This Fork
 
-```bash
-# YOLO
-curl -fsSL https://opencode.ai/install | bash
+If your company has GitHub Copilot Business/Enterprise seats, you already have access to frontier models through the Copilot API. This fork strips OpenCode down to **only** use that API ΓÇö nothing else touches the network.
 
-# Package managers
-npm i -g opencode-ai@latest        # or bun/pnpm/yarn
-scoop install opencode             # Windows
-choco install opencode             # Windows
-brew install anomalyco/tap/opencode # macOS and Linux (recommended, always up to date)
-brew install opencode              # macOS and Linux (official brew formula, updated less)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-bin               # Arch Linux (Latest from AUR)
-mise use -g opencode               # Any OS
-nix run nixpkgs#opencode           # or github:anomalyco/opencode for latest dev branch
+- **Zero data leakage** ΓÇö the only outbound traffic goes to `api.githubcopilot.com` and `github.com`
+- **Source-level patches** ΓÇö share uploads, external proxies, third-party providers, auto-update checks, and telemetry are all removed at the code level, not behind env vars
+- **Drop-in replacement** ΓÇö same OpenCode TUI, LSP support, plan/build modes. Just locked to one provider.
+
+## Autopilot Mode
+
+Set a task. Walk away. Come back to finished work.
+
+Autopilot is a new agent mode that runs fully autonomously ΓÇö it auto-approves all tool calls, auto-continues when interrupted, and keeps working until the job is done.
+
+### How It Works
+
+1. Switch to autopilot agent via `Tab` key or start a session with `--agent autopilot`
+2. Give it a task ΓÇö it will not ask questions or pause for confirmation
+3. When it finishes, it signals **"ALL TASKS COMPLETE"**
+
+Two auto-continue mechanisms keep it moving:
+
+- **Truncation recovery** ΓÇö if the model hits the output token limit (`finish_reason: length`), a synthetic "continue" message is injected. Resets after productive tool calls.
+- **Autopilot continuation** ΓÇö if the agent stops without signaling completion, it gets re-prompted to keep working. Capped at 5 retries.
+
+### Guardrails
+
+Autopilot won't run forever. Built-in safety limits prevent runaway sessions:
+
+| Guardrail | Default | Config Key |
+|---|---|---|
+| Token budget | 20M tokens (input + output + reasoning) | `autopilot_token_budget` |
+| Time cap | 8 hours (480 minutes) | `autopilot_timeout_minutes` |
+| Max auto-continues | 5 consecutive (resets on tool calls) | `auto_continue_max_retries` |
+
+Configure in `.opencode.json`:
+
+```json
+{
+  "experimental": {
+    "autopilot_token_budget": 20000000,
+    "autopilot_timeout_minutes": 480,
+    "auto_continue_max_retries": 5
+  }
+}
 ```
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
+### Live Dashboard
 
-### Desktop App (BETA)
+When running in autopilot, the TUI sidebar shows a live status panel:
 
-OpenCode is also available as a desktop application. Download directly from the [releases page](https://github.com/anomalyco/opencode/releases) or [opencode.ai/download](https://opencode.ai/download).
+- **Time** ΓÇö elapsed vs timeout cap
+- **Tokens** ΓÇö consumed vs budget
+- **Continues** ΓÇö auto-continue count
 
-| Platform              | Download                              |
-| --------------------- | ------------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-darwin-aarch64.dmg` |
-| macOS (Intel)         | `opencode-desktop-darwin-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe`    |
-| Linux                 | `.deb`, `.rpm`, or AppImage           |
+Indicators turn orange at 90% usage. Use `/autopilot` to view current settings.
 
-```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
-# Windows (Scoop)
-scoop bucket add extras; scoop install extras/opencode-desktop
-```
+## Security Patches
 
-#### Installation Directory
+Every outbound network path except Copilot has been sealed at the source level:
 
-The install script respects the following priority order for the installation path:
+| What | Patch |
+|---|---|
+| Share / conversation upload | Permanently disabled (`disabled = true`) |
+| Reverse proxy to `app.opencode.ai` | Replaced with 404 |
+| CORS for `*.opencode.ai` | Removed from allowlist |
+| Auto-update checks | Short-circuited to return current version |
+| Third-party providers | 19 SDK imports removed, only `github-copilot` retained |
+| Non-Copilot auth plugins | Stripped (Codex, GitLab, Poe, Cloudflare) |
+| Model registry | Allowlist ΓÇö only `github-copilot` models shown |
 
-1. `$OPENCODE_INSTALL_DIR` - Custom installation directory
-2. `$XDG_BIN_DIR` - XDG Base Directory Specification compliant path
-3. `$HOME/bin` - Standard user binary directory (if it exists or can be created)
-4. `$HOME/.opencode/bin` - Default fallback
+## Build from Source
+
+Requires [Bun](https://bun.sh).
 
 ```bash
-# Examples
-OPENCODE_INSTALL_DIR=/usr/local/bin curl -fsSL https://opencode.ai/install | bash
-XDG_BIN_DIR=$HOME/.local/bin curl -fsSL https://opencode.ai/install | bash
+git clone https://github.com/Zekai-Zhao-321/opencode.git
+cd opencode
+bun install
+cd packages/opencode
+bun run build
 ```
 
-### Agents
+Run the built binary:
 
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
+```bash
+./bin/opencode
+```
 
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
+Or run from source in dev mode:
 
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
+```bash
+cd packages/opencode
+bun run --conditions=browser src/index.ts
+```
 
-Learn more about [agents](https://opencode.ai/docs/agents).
+## Configuration
 
-### Documentation
+Minimal `.opencode.json` (already included in the repo):
 
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "github-copilot/claude-sonnet-4.6",
+  "provider": {
+    "github-copilot": {
+      "name": "GitHub Copilot",
+      "env": ["GITHUB_TOKEN"]
+    }
+  },
+  "share": "disabled"
+}
+```
 
-### Contributing
+Authentication happens through the standard Copilot device flow ΓÇö run the binary and follow the prompts.
 
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
+## Upstream
 
-### Building on OpenCode
-
-If you are working on a project that's related to OpenCode and is using "opencode" as part of its name, for example "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in any way.
-
-### FAQ
-
-#### How is this different from Claude Code?
-
-It's very similar to Claude Code in terms of capability. Here are the key differences:
-
-- 100% open source
-- Not coupled to any provider. Although we recommend the models we provide through [OpenCode Zen](https://opencode.ai/zen), OpenCode can be used with Claude, OpenAI, Google, or even local models. As models evolve, the gaps between them will close and pricing will drop, so being provider-agnostic is important.
-- Built-in opt-in LSP support
-- A focus on TUI. OpenCode is built by neovim users and the creators of [terminal.shop](https://terminal.shop); we are going to push the limits of what's possible in the terminal.
-- A client/server architecture. This, for example, can allow OpenCode to run on your computer while you drive it remotely from a mobile app, meaning that the TUI frontend is just one of the possible clients.
+This fork tracks [anomalyco/opencode](https://github.com/anomalyco/opencode) on the `upstream-dev` branch. The upstream project provides the core TUI, agent framework, LSP integration, and tool system. All credit to the OpenCode team.
 
 ---
 
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+MIT License ΓÇö see [LICENSE](./LICENSE).

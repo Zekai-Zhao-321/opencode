@@ -29,3 +29,5 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+run-opencode.ps1
+.rewrite-history.sh

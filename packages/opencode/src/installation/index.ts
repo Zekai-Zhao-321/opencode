@@ -205,6 +205,8 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient | ChildPro
           return "unknown" as Method
         }),
         latest: Effect.fn("Installation.latest")(function* (installMethod?: Method) {
+          // HARDENED: Skip update checks — this fork is maintained separately
+          return InstallationVersion
           const detectedMethod = installMethod || (yield* result.method())
 
           if (detectedMethod === "brew") {

@@ -16,7 +16,8 @@ import * as Log from "@opencode-ai/core/util/log"
 import { SessionShareTable } from "./share.sql"
 
 const log = Log.create({ service: "share-next" })
-const disabled = process.env["OPENCODE_DISABLE_SHARE"] === "true" || process.env["OPENCODE_DISABLE_SHARE"] === "1"
+// HARDENED: Share feature permanently disabled — no conversation data ever leaves this machine
+const disabled = true
 
 export type Api = {
   create: string
