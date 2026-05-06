@@ -1,0 +1,8 @@
+Your session is ending soon. Wrap up your current work:
+
+1. Finish or safely checkpoint whatever you are currently doing.
+2. Summarize progress made during this session.
+3. Identify remaining work and next steps clearly.
+4. Save any state needed for the next run (commit, update trackers, leave notes).
+
+Do NOT start new substantial work. Focus on leaving a clean handoff.

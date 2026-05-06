@@ -21,6 +21,8 @@ import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import PROMPT_AUTOPILOT from "../session/prompt/autopilot.txt"
+import PROMPT_CONTINUATION from "../session/prompt/continuation.txt"
+import PROMPT_BUDGET_LIMIT from "../session/prompt/budget-limit.txt"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -1438,6 +1440,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         let autopilotContinueCount = 0
         let autopilotStartTime: number | undefined
         let autopilotOrigin: string | undefined
+        let budgetLimitSent = false
 
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
@@ -1580,6 +1583,30 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 break
               }
 
+              // Graceful budget warning at 90% — give agent one more turn to wrap up
+              if (!budgetLimitSent && (totalTokens >= tokenBudget * 0.9 || elapsedMinutes >= timeoutMinutes * 0.9)) {
+                budgetLimitSent = true
+                yield* slog.info("autopilot: budget limit approaching, sending wrap-up prompt", { totalTokens, tokenBudget, elapsedMinutes, timeoutMinutes })
+                const wrapUpMsg: MessageV2.User = {
+                  id: MessageID.ascending(),
+                  sessionID,
+                  role: "user",
+                  time: { created: Date.now() },
+                  agent: lastUser.agent,
+                  model: lastUser.model,
+                }
+                yield* sessions.updateMessage(wrapUpMsg)
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: wrapUpMsg.id,
+                  sessionID,
+                  type: "text",
+                  text: PROMPT_BUDGET_LIMIT,
+                  synthetic: true,
+                } satisfies MessageV2.TextPart)
+                continue
+              }
+
               // Check if the agent signaled explicit completion
               const textParts = lastAssistantMsg?.parts.filter((p) => p.type === "text" && "text" in p) ?? []
               const lastTextPart = textParts[textParts.length - 1]
@@ -1608,6 +1635,17 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   message: `↻ Auto-continuing autopilot (${autopilotContinueCount}/${maxAutopilotContinues})`,
                   next: Date.now(),
                 })
+
+                // Extract objective for continuation prompt
+                const goal = cfg.experimental?.autopilot_goal ?? process.env.OPENCODE_AUTOPILOT_GOAL
+                const objective = goal
+                  ? goal
+                  : (() => {
+                      const originMsg = msgs.find((m) => m.info.id === autopilotOrigin)
+                      const textPart = originMsg?.parts.find((p) => p.type === "text" && "text" in p && !("synthetic" in p && p.synthetic))
+                      return textPart && "text" in textPart ? (textPart.text as string).slice(0, 2000) : "Complete the assigned task."
+                    })()
+
                 const continueMsg: MessageV2.User = {
                   id: MessageID.ascending(),
                   sessionID,
@@ -1622,7 +1660,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   messageID: continueMsg.id,
                   sessionID,
                   type: "text",
-                  text: "Continuing autonomously. You have not signaled task completion. If there are remaining tasks or plan items, continue working on them. If you are truly done, respond with 'ALL TASKS COMPLETE' as your final line.",
+                  text: PROMPT_CONTINUATION.replace("{{OBJECTIVE}}", objective),
                   synthetic: true,
                 } satisfies MessageV2.TextPart)
                 continue

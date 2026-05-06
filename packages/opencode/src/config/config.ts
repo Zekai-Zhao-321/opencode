@@ -275,6 +275,10 @@ export const Info = Schema.Struct({
         description:
           "Wall-clock timeout in minutes for autopilot mode. Agent wraps up when time is reached. Default: 480 (8 hours).",
       }),
+      autopilot_goal: Schema.optional(Schema.String).annotate({
+        description:
+          "Persistent objective for autopilot mode. Injected into every continuation prompt so the agent stays on track. Can also be set via --goal CLI flag.",
+      }),
     }),
   ),
 })

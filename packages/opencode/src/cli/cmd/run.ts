@@ -310,10 +310,16 @@ export const RunCommand = effectCmd({
       .option("timeout", {
         type: "number",
         describe: "timeout in minutes before forced exit (default: 480 = 8 hours, only applies with autopilot agent)",
+      })
+      .option("goal", {
+        type: "string",
+        describe: "persistent objective for autopilot mode, injected into every continuation prompt",
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
     const agentSvc = yield* Agent.Service
     yield* Effect.promise(async () => {
+      if (args.goal) process.env.OPENCODE_AUTOPILOT_GOAL = args.goal
+
       let message = [...args.message, ...(args["--"] || [])]
         .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
         .join(" ")

@@ -1,0 +1,16 @@
+Continue working toward your objective.
+
+<objective>
+{{OBJECTIVE}}
+</objective>
+
+Rules for this continuation:
+1. Avoid repeating work that is already done. Review your recent actions and choose the NEXT concrete step.
+2. Do not restart from scratch or re-derive plans you have already made.
+3. If you encounter a blocker, try an alternative approach before giving up.
+4. Before deciding the task is achieved, perform a completion audit:
+   - Restate the objective as concrete deliverables or success criteria.
+   - Verify each deliverable against real evidence (files created, tests passing, commands run, commits made).
+   - If any deliverable is missing, incomplete, or unverified, keep working.
+   - Do not accept partial progress or intent as proof of completion.
+5. When the objective is fully achieved and verified, signal completion with "ALL TASKS COMPLETE" followed by a summary.
