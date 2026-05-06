@@ -31,6 +31,7 @@ test("returns default native agents when no config", async () => {
       const names = agents.map((a) => a.name)
       expect(names).toContain("build")
       expect(names).toContain("plan")
+      expect(names).toContain("autopilot")
       expect(names).toContain("general")
       expect(names).toContain("explore")
       expect(names).toContain("compaction")
@@ -730,6 +731,7 @@ test("defaultAgent throws when all primary agents are disabled", async () => {
       agent: {
         build: { disable: true },
         plan: { disable: true },
+        autopilot: { disable: true },
       },
     },
   })
@@ -738,6 +740,31 @@ test("defaultAgent throws when all primary agents are disabled", async () => {
     fn: async () => {
       // build and plan are disabled, no primary-capable agents remain
       await expect(load(tmp.path, (svc) => svc.defaultAgent())).rejects.toThrow("no primary visible agent found")
+    },
+  })
+})
+
+test("autopilot agent has correct permissions", async () => {
+  await using tmp = await tmpdir()
+  await WithInstance.provide({
+    directory: tmp.path,
+    fn: async () => {
+      const autopilot = await load(tmp.path, (svc) => svc.get("autopilot"))
+      expect(autopilot).toBeDefined()
+      expect(autopilot?.mode).toBe("primary")
+      expect(autopilot?.native).toBe(true)
+      // Auto-approve everything
+      expect(evalPerm(autopilot, "edit")).toBe("allow")
+      expect(evalPerm(autopilot, "bash")).toBe("allow")
+      expect(evalPerm(autopilot, "write")).toBe("allow")
+      expect(evalPerm(autopilot, "read")).toBe("allow")
+      expect(evalPerm(autopilot, "grep")).toBe("allow")
+      // Deny interactive tools
+      expect(evalPerm(autopilot, "question")).toBe("deny")
+      expect(evalPerm(autopilot, "plan_enter")).toBe("deny")
+      expect(evalPerm(autopilot, "plan_exit")).toBe("deny")
+      // Doom loop allowed (safety limits handle this)
+      expect(evalPerm(autopilot, "doom_loop")).toBe("allow")
     },
   })
 })

@@ -147,6 +147,25 @@ export const layer = Layer.effect(
             mode: "primary",
             native: true,
           },
+          autopilot: {
+            name: "autopilot",
+            description:
+              "Autonomous agent. Auto-continues on token limits, auto-approves tools, runs unattended until task completion.",
+            options: {},
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "allow",
+                question: "deny",
+                plan_enter: "deny",
+                plan_exit: "deny",
+                doom_loop: "allow",
+              }),
+              user,
+            ),
+            mode: "primary",
+            native: true,
+          },
           general: {
             name: "general",
             description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,

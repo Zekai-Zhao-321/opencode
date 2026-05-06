@@ -302,6 +302,14 @@ export const RunCommand = effectCmd({
         type: "boolean",
         describe: "auto-approve permissions that are not explicitly denied (dangerous!)",
         default: false,
+      })
+      .option("max-turns", {
+        type: "number",
+        describe: "maximum total agent turns before forced exit (default: 200, only applies with autopilot agent)",
+      })
+      .option("timeout", {
+        type: "number",
+        describe: "timeout in minutes before forced exit (default: 480 = 8 hours, only applies with autopilot agent)",
       }),
   handler: Effect.fn("Cli.run")(function* (args) {
     const agentSvc = yield* Agent.Service
@@ -443,7 +451,25 @@ export const RunCommand = effectCmd({
 
         async function loop() {
           const toggles = new Map<string, boolean>()
+          const isAutopilot = args.agent === "autopilot"
+          const maxTurns = args["max-turns"] ?? (isAutopilot ? 200 : Infinity)
+          const timeoutMs = (args.timeout ?? (isAutopilot ? 480 : Infinity)) * 60_000
+          let turnCount = 0
+          const startTime = Date.now()
+          let exitReason = "completed"
 
+          const timeoutHandle =
+            timeoutMs < Infinity
+              ? setTimeout(() => {
+                  exitReason = "timeout"
+                  UI.println(
+                    UI.Style.TEXT_WARNING_BOLD +
+                      `\u26a0 Timeout (${args.timeout ?? 480}min) reached. Session will stop after current turn.`,
+                  )
+                }, timeoutMs)
+              : undefined
+
+          try {
           for await (const event of events.stream) {
             if (
               event.type === "message.updated" &&
@@ -491,6 +517,14 @@ export const RunCommand = effectCmd({
 
               if (part.type === "step-finish") {
                 if (emit("step_finish", { part })) continue
+                turnCount++
+                if (turnCount >= maxTurns) {
+                  exitReason = "max_turns"
+                  UI.println(
+                    UI.Style.TEXT_WARNING_BOLD + `\u26a0 Max turns (${maxTurns}) reached. Stopping.`,
+                  )
+                  break
+                }
               }
 
               if (part.type === "text" && part.time?.end) {
@@ -545,7 +579,7 @@ export const RunCommand = effectCmd({
               const permission = event.properties
               if (permission.sessionID !== sessionID) continue
 
-              if (args["dangerously-skip-permissions"]) {
+              if (args["dangerously-skip-permissions"] || isAutopilot) {
                 await sdk.permission.reply({
                   requestID: permission.id,
                   reply: "once",
@@ -562,6 +596,22 @@ export const RunCommand = effectCmd({
                 })
               }
             }
+          }
+          } finally {
+            if (timeoutHandle) clearTimeout(timeoutHandle)
+          }
+
+          if (isAutopilot) {
+            const elapsed = Math.round((Date.now() - startTime) / 1000)
+            const mins = Math.floor(elapsed / 60)
+            const secs = elapsed % 60
+            UI.empty()
+            UI.println(`───── Autopilot Summary ─────`)
+            UI.println(`  Exit reason: ${exitReason}`)
+            UI.println(`  Turns: ${turnCount}`)
+            UI.println(`  Elapsed: ${mins}m ${secs}s`)
+            if (error) UI.println(`  Errors: ${error}`)
+            UI.empty()
           }
         }
 

@@ -260,6 +260,21 @@ export const Info = Schema.Struct({
       mcp_timeout: Schema.optional(PositiveInt).annotate({
         description: "Timeout in milliseconds for model context protocol (MCP) requests",
       }),
+      auto_continue: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Auto-continue when model hits output token limit (finish_reason: length). Injects a synthetic 'continue' message instead of waiting for user input. Default: true.",
+      }),
+      auto_continue_max_retries: Schema.optional(PositiveInt).annotate({
+        description: "Max consecutive auto-continue retries before stopping. Resets when model makes tool calls. Default: 5.",
+      }),
+      autopilot_token_budget: Schema.optional(PositiveInt).annotate({
+        description:
+          "Total token budget (input+output+reasoning) for autopilot mode. Agent wraps up when budget is reached. Default: 20,000,000 (20M).",
+      }),
+      autopilot_timeout_minutes: Schema.optional(PositiveInt).annotate({
+        description:
+          "Wall-clock timeout in minutes for autopilot mode. Agent wraps up when time is reached. Default: 480 (8 hours).",
+      }),
     }),
   ),
 })

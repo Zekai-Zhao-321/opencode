@@ -20,6 +20,7 @@ import { Plugin } from "../plugin"
 import PROMPT_PLAN from "../session/prompt/plan.txt"
 import BUILD_SWITCH from "../session/prompt/build-switch.txt"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
+import PROMPT_AUTOPILOT from "../session/prompt/autopilot.txt"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
 import { LSP } from "@/lsp/lsp"
@@ -237,6 +238,34 @@ export const layer = Layer.effect(
       if (!userMessage) return input.messages
 
       if (!Flag.OPENCODE_EXPERIMENTAL_PLAN_MODE) {
+        if (input.agent.name === "autopilot") {
+          userMessage.parts.push({
+            id: PartID.ascending(),
+            messageID: userMessage.info.id,
+            sessionID: userMessage.info.sessionID,
+            type: "text",
+            text: PROMPT_AUTOPILOT,
+            synthetic: true,
+          })
+          const wasPlan = input.messages.some((msg) => msg.info.role === "assistant" && msg.info.agent === "plan")
+          if (wasPlan) {
+            const ctx = yield* InstanceState.context
+            const plan = Session.plan(input.session, ctx)
+            const exists = yield* fsys.existsSafe(plan)
+            if (exists) {
+              userMessage.parts.push({
+                id: PartID.ascending(),
+                messageID: userMessage.info.id,
+                sessionID: userMessage.info.sessionID,
+                type: "text",
+                text: `A plan file exists at ${plan}. Execute the plan defined within it.`,
+                synthetic: true,
+              })
+            }
+          }
+          return input.messages
+        }
+
         if (input.agent.name === "plan") {
           userMessage.parts.push({
             id: PartID.ascending(),
@@ -1405,6 +1434,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         let step = 0
         const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
+        let autoContinueCount = 0
+        let autopilotContinueCount = 0
+        let autopilotStartTime: number | undefined
+        let autopilotOrigin: string | undefined
+
         while (true) {
           yield* status.set(sessionID, { type: "busy" })
           yield* slog.info("loop", { step })
@@ -1427,6 +1461,17 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
+          // Reset autopilot tracking on new (non-synthetic) user message
+          if (lastUser.agent === "autopilot" && lastUser.id !== autopilotOrigin) {
+            const msg = msgs.findLast((m) => m.info.id === lastUser!.id)
+            const synthetic = msg?.parts.some((p) => "synthetic" in p && p.synthetic) ?? false
+            if (!synthetic) {
+              autopilotOrigin = lastUser.id
+              autopilotStartTime = Date.now()
+              autopilotContinueCount = 0
+            }
+          }
+
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
           )
@@ -1437,12 +1482,153 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           const hasToolCalls =
             lastAssistantMsg?.parts.some((part) => part.type === "tool" && !part.metadata?.providerExecuted) ?? false
 
+          // Reset auto-continue counters when model makes tool calls (productive work)
+          if (hasToolCalls || lastAssistant?.finish === "tool-calls") {
+            autoContinueCount = 0
+            autopilotContinueCount = 0
+          }
+
           if (
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
             lastUser.id < lastAssistant.id
           ) {
+            const cfg = yield* config.get()
+
+            // Auto-continue on output token limit (finish_reason: "length")
+            if (
+              lastAssistant.finish === "length" &&
+              cfg.experimental?.auto_continue !== false &&
+              autoContinueCount < (cfg.experimental?.auto_continue_max_retries ?? 5)
+            ) {
+              yield* slog.info("auto-continue: output token limit hit", {
+                attempt: autoContinueCount + 1,
+                max: cfg.experimental?.auto_continue_max_retries ?? 5,
+              })
+              autoContinueCount++
+              yield* status.set(sessionID, {
+                type: "retry",
+                attempt: autoContinueCount,
+                message: `↻ Auto-continuing: output truncated (${autoContinueCount}/${cfg.experimental?.auto_continue_max_retries ?? 5})`,
+                next: Date.now(),
+              })
+              const continueMsg: MessageV2.User = {
+                id: MessageID.ascending(),
+                sessionID,
+                role: "user",
+                time: { created: Date.now() },
+                agent: lastUser.agent,
+                model: lastUser.model,
+              }
+              yield* sessions.updateMessage(continueMsg)
+              yield* sessions.updatePart({
+                id: PartID.ascending(),
+                messageID: continueMsg.id,
+                sessionID,
+                type: "text",
+                text: "Output token limit hit. Continue from where you left off — no recap, no apology, just resume directly.",
+                synthetic: true,
+              } satisfies MessageV2.TextPart)
+              continue
+            }
+
+            // Auto-continue in autopilot mode
+            const maxAutopilotContinues = cfg.experimental?.auto_continue_max_retries ?? 5
+            if (
+              lastUser.agent === "autopilot" &&
+              lastAssistant.finish === "stop" &&
+              autopilotContinueCount < maxAutopilotContinues
+            ) {
+              // Check autopilot guardrails before re-prompting
+              const tokenBudget = cfg.experimental?.autopilot_token_budget ?? 20_000_000
+              const timeoutMinutes = cfg.experimental?.autopilot_timeout_minutes ?? 480
+              const origin = msgs.findIndex((m) => m.info.id === autopilotOrigin)
+              const scope = origin === -1 ? msgs : msgs.slice(origin)
+              const totalTokens = scope.reduce((sum, m) => {
+                if (m.info.role !== "assistant") return sum
+                const assistant = m.info as MessageV2.Assistant
+                if (assistant.agent !== "autopilot") return sum
+                const t = assistant.tokens
+                return sum + (t?.input ?? 0) + (t?.output ?? 0) + (t?.reasoning ?? 0)
+              }, 0)
+              const elapsedMinutes = (Date.now() - (autopilotStartTime ?? Date.now())) / 60_000
+
+              if (totalTokens >= tokenBudget) {
+                yield* slog.info("autopilot: token budget exhausted", { totalTokens, tokenBudget })
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: lastAssistantMsg!.info.id,
+                  sessionID,
+                  type: "text",
+                  text: `\n\n⚠ Autopilot token budget reached (${(totalTokens / 1_000_000).toFixed(1)}M / ${(tokenBudget / 1_000_000).toFixed(0)}M). Stopping.`,
+                  synthetic: true,
+                } satisfies MessageV2.TextPart)
+                break
+              }
+
+              if (elapsedMinutes >= timeoutMinutes) {
+                yield* slog.info("autopilot: timeout reached", { elapsedMinutes, timeoutMinutes })
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: lastAssistantMsg!.info.id,
+                  sessionID,
+                  type: "text",
+                  text: `\n\n⚠ Autopilot timeout reached (${Math.floor(elapsedMinutes)}min / ${timeoutMinutes}min). Stopping.`,
+                  synthetic: true,
+                } satisfies MessageV2.TextPart)
+                break
+              }
+
+              // Check if the agent signaled explicit completion
+              const textParts = lastAssistantMsg?.parts.filter((p) => p.type === "text" && "text" in p) ?? []
+              const lastTextPart = textParts[textParts.length - 1]
+              const lastText = (lastTextPart && "text" in lastTextPart ? (lastTextPart.text as string) : "") ?? ""
+              const tail = lastText.slice(-300).toLowerCase()
+              const doneSignals = [
+                "all tasks complete",
+                "task complete",
+                "all done",
+                "nothing more to do",
+                "no remaining tasks",
+                "completed all",
+                "finished all",
+              ]
+              const isDone = doneSignals.some((signal) => tail.includes(signal))
+
+              if (!isDone) {
+                yield* slog.info("auto-continue: autopilot voluntary stop, task not complete", {
+                  attempt: autopilotContinueCount + 1,
+                  max: maxAutopilotContinues,
+                })
+                autopilotContinueCount++
+                yield* status.set(sessionID, {
+                  type: "retry",
+                  attempt: autopilotContinueCount,
+                  message: `↻ Auto-continuing autopilot (${autopilotContinueCount}/${maxAutopilotContinues})`,
+                  next: Date.now(),
+                })
+                const continueMsg: MessageV2.User = {
+                  id: MessageID.ascending(),
+                  sessionID,
+                  role: "user",
+                  time: { created: Date.now() },
+                  agent: lastUser.agent,
+                  model: lastUser.model,
+                }
+                yield* sessions.updateMessage(continueMsg)
+                yield* sessions.updatePart({
+                  id: PartID.ascending(),
+                  messageID: continueMsg.id,
+                  sessionID,
+                  type: "text",
+                  text: "Continuing autonomously. You have not signaled task completion. If there are remaining tasks or plan items, continue working on them. If you are truly done, respond with 'ALL TASKS COMPLETE' as your final line.",
+                  synthetic: true,
+                } satisfies MessageV2.TextPart)
+                continue
+              }
+            }
+
             yield* slog.info("exiting loop")
             break
           }
